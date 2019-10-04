@@ -1,0 +1,179 @@
+
+<html>
+<head>
+	<style>
+table {
+  font-family: arial, sans-serif;
+  border-collapse: collapse;
+  width: 100%;
+}
+td, th {
+  border: 1px solid #dddddd;
+  text-align: left;
+  padding: 8px;
+  font-size:9;
+}
+
+tr:nth-child(even) {
+  background-color: #dddddd;
+}
+
+#transaction-info-div{
+display: none;
+}
+#prompt{
+color:red;
+}
+</style>
+</head>
+<body>
+	  <div align="center">
+  <h3>XPX Transaction Explorer</h3>
+  <input id="input-hash" type="text" placeholder="Input hash number"><button id="search"><span>SEARCH</span></button>
+  <div align="center">
+
+  	<div id="transaction-list-div">
+	    <table id="transaction-list">
+	    	<tbody>
+	        	<tr>
+	          		<th>Hash</th>
+	          		<th>Signature</th>
+	          		<th>Signer</th>
+	        	</tr>
+	    	</tbody>
+	    </table>
+    </div>
+
+    <div id="transaction-info-div">
+    	<h2 onclick="showTransactionList()">Back to list</h2>
+	    <table id="transaction-info">
+		    <tbody>
+		        <tr>
+		          	<th>Hash</th>
+		          	<th>Signature</th>
+		          	<th>Signer</th>
+		        </tr>
+		        <tr>
+		        	<td></td>
+		        	<td></td>
+		        	<td></td>
+		        </tr>
+	    	</tbody>
+    	</table> 
+
+    </div>
+    <div id="foot-nav">
+    	<button onclick="loadTransactions()">Load more transactions</button>
+    	<p id="prompt">Loading transactions please wait...</p>
+    </div>
+    
+  </div>
+</body>
+
+</html>
+
+<script>
+var transactionResult = []
+var displayIndex = 1;
+var transactionPromises = []
+document.addEventListener("DOMContentLoaded", function(){
+getAllTransactions()
+});
+document.getElementById("search").addEventListener("click", function(){
+var hashValue = document.getElementById("input-hash").value;
+getTransaction(hashValue);
+});
+
+/////Gets an array of transactions of the given blockheight./////
+function getBlockTransactions(counter){
+  return new Promise((resolve,reject)=>{
+    fetch(`http://bctestnet1.xpxsirius.io:3000/block/${counter}/transactions`)
+    .then((resp)=>resp.json())
+    .then((data)=>{
+      resolve(data);
+    })
+  })
+}
+/////Gets the current height of the blockchain./////
+function getBlockHeight(){
+	return new Promise((resolve,reject)=>{
+    fetch(`http://bctestnet1.xpxsirius.io:3000/chain/height`)
+    .then((resp)=>resp.json())
+    .then((data)=>{
+      resolve(data.height[0]);
+    })
+  })
+}
+
+/////Gets the transaction information given a transaction hash./////
+function getTransaction(hash){
+	return new Promise((resolve,reject)=>{
+    fetch(`http://bctestnet1.xpxsirius.io:3000/transaction/${hash}`)
+    .then((resp)=>resp.json())
+    .then((data)=>{
+      document.getElementById("transaction-info").rows[1].cells[0].innerHTML = data.meta.hash;
+      document.getElementById("transaction-info").rows[1].cells[1].innerHTML = data.transaction.signature;
+      document.getElementById("transaction-info").rows[1].cells[2].innerHTML = data.transaction.signer;
+      document.getElementById("transaction-info-div").style.display = "inline-block";
+      document.getElementById("transaction-list-div").style.display = "none";
+      document.getElementById("foot-nav").style.display = "none";
+      resolve(data);
+    })
+  })
+}
+
+/////Loops through each of the blocks in the chain and stores the transactions in those blocks into a transaction results array/////
+async function getAllTransactions (){
+  var index  = await getBlockHeight();
+
+/////Limited to 100 requests per batch as requesting more than that gives a connection timeout. Some block heights might not have transactions/////
+  for(var i=index; i> 0; i -= 100){
+    for(var j = 0; j < 100; j++){
+      transactionPromises.push(getBlockTransactions(index))
+      index--;     
+    }
+/////Does a batch promise request/////
+    await Promise.all(transactionPromises).then((someData)=>{ 
+      var result = someData.filter(e => e.length);
+      transactionResult = transactionResult.concat(result);
+      console.log(transactionResult.length)
+      if(transactionResult.length >= 5 && displayIndex == 1){
+        loadTransactions();
+      }
+    })
+/////Clears the promises/////
+    transactionPromises.splice(0,transactionPromises.length);
+  }
+  console.log(transactionResult); 
+}
+
+////Loads the contents of the transaction results array/////
+function loadTransactions(){
+if((transactionResult.length-displayIndex) >=0 ){
+  endIndex = displayIndex + 10;
+for(var i = displayIndex ; i < endIndex; i++){
+  if(transactionResult[i] != undefined){
+    var newRow = document.getElementById("transaction-list").insertRow(-1);
+    cell1 = newRow.insertCell(0);
+    cell2 = newRow.insertCell(1);
+    cell3 = newRow.insertCell(2);
+    cell1.innerHTML = transactionResult[i][0].meta.hash;
+    cell2.innerHTML = transactionResult[i][0].transaction.signature;
+    cell3.innerHTML = transactionResult[i][0].transaction.signer;
+    document.getElementById("foot-nav").style.display = "inline-block";
+    document.getElementById("prompt").innerHTML=""
+  }
+}
+displayIndex = endIndex
+}else{
+	document.getElementById("prompt").innerHTML="Loading transactions please press again"
+}
+}
+/////Brings back the transaction list table/////
+function showTransactionList(){
+	document.getElementById("transaction-info-div").style.display = "none";
+    document.getElementById("transaction-list-div").style.display = "inline-block";
+    document.getElementById("foot-nav").style.display = "inline-block";
+    document.getElementById("prompt").innerHTML=""
+}
+</script>
